@@ -67,14 +67,82 @@ Cargo.toml은 crate name, the author, the semantic version number과 dependencie
 
 ## Panic Implementation
 
+panic_handler attribute는 panic이 발생했을 때 컴파일러가 불러야 하는 함수를 정의한다. 표준 라이브러리는 자신만의 panic handler 함수를 제공하지만, no_std 환경에서 이를 정의할 필요가 있다.
+
+    // in main.rs
+
+    use core::panic::PanicInfo;
+
+    /// This function is called on panic.
+    #[panic_handler]
+    fn panic(_info: &PanicInfo) -> ! {
+        loop {}
+    }
+
+PanicInfo 파라미터는 panic이 발생한 파일과 줄 그리고 선택적인 panic 메시지를 포함한다. 함수는 절대 반환하지 않으므로 "never" 타입인 !를 반환하는 diverging 함수이다. 현재 우리가 이 함수 안에서 할 수 있는 것이 많지 않으므로 그냥 무한루프를 생성하도록 한다.
 
 ## The eh_personality Language Item
 
+language item들은 컴파일러에 의해 내부적으로 요구되는 특별한 함수와 타입들이다. ++ 예를 들어 Copy 트레이트는 어떤 타입들이 copy semantics를 가지는 지 컴파일러에게 알려주는 language item이다. 구현 내용을 보면, 그것을 language item으로 정의한 특별한 #[lang = "copy"] attribute를 가진다. ++
+
+language items를 직접 구현하는 것도 가능하지만, 이는 최후의 수단으로 사용하는 것이 좋다. ++ 그 이유는 language items가 매우 불안정한 구현이고 타입 ++ 다행히, 위 language item error를 해결할 수 있는 더 안정적인 방법이 있다.
+
+eh_personality language item은 stack unwinding을 구현하는 데에 사용된 함수를 나타낸다. 기본적으로, 러스트는 panic에서 모든 살아있는 스택 변수의 소멸자를 실행하기 위해 unwinding을 사용한다. 이는 모든 사용된 메모리가 해제되는 것과 부모 thread가 panic을 해결하고 실행을 지속할 수 있도록 보장한다. 하지만, unwinding은 복잡한 process이고 몇몇의 OS specific 라이브러리를 필요로 한다. 따라서 우리는 이를 사용하지 않을 것이다.
+
 ### Disabling Unwinding
+
+unwinding이 바람직하지 않은 다른 경우들도 있다. 따라서 러스트는 panic을 abort하는 옵션을 제공한다. 이는 unwinding symbol 정보가 생성되는 것을 막고 따라서 바이너리 사이즈를 상당히 줄여준다. unwinding을 막는 가장 쉬운 방법은 Cargo.toml에 다음 코드를 넣는 것이다.
+
+    [profile.dev]
+    panic = "abort"
+
+    [profile.release]
+    panic = "abort"
+
+이는 cargo build를 사용하는 dev 프로필과 cargo build --release를 사용하는 release 프로필에서 panic strategy를 abort로 설정하는 것이다. 이제 eh_personality language item으 더 이상 필요하지 않다.
+
+이제 위에서 본 에러들은 해결했다. 하지만, 컴파일을 실행하면 새로운 에러가 발생한다.
+
+    > cargo build
+    error: requires `start` lang_item
 
 ## The start attribute
 
+누군가는 main 함수가 프로그램을 실행할 때 불리는 첫 번째 함수라고 생각할 것이다. 하지만, 대부분의 언어는 garbage collection이나 software threads와 같은 것들과 관련 있는 runtime system을 가진다. 이 runtime은 main 전에 실행되고, 따라서 스스로 초기화해야 할 필요가 있다.
+
+표준 라이브러리를 링크하는 전형적인 러스트 바이너리에서, 실행은 C 어플리케이션을 위한 환경을 만드는 C runtime 라이브러리인 crt0("C runtime zero")에서 시작한다. 이것은 스택을 만들고 인자들을 정확한 레지스터에 등록하는 것을 포함한다. 이후 C runtime은 start language item에 의해 표시된 Rust runtime의 entry point를 실행시킨다. 러스트는 stack overflow guards나 backtrace on panic을 출력하는 작은 것들을 관리하는 최소한의 runtime만 가진다. runtime은 마지막에 main 함수를 실행한다.
+
+freestanding 실행파일은 Rust runtime과 crt0에 대해 접근하지 않는다. 따라서 우리만의 entry point를 정의해야 한다. start language item을 구현하는 것은 start language item이 crt0을 필요로 하기 때문에 안된다. 대신 crt0 entry point를 직접 overwrite할 수 있다.
+
 ### Overwriting the Entry Point
+
+Rust 컴파일러에게 표준 entry point chain을 사용하지 않을 것을 명시하기 위해 #![no_main] attribute를 추가한다.
+
+    #![no_std]
+    #![no_main]
+
+    use core::panic::PanicInfo;
+
+    /// This function is called on panic.
+    #[panic_handler]
+    fn panic(_info: &PanicInfo) -> ! {
+        loop {}
+    }
+
+main 함수는 underlying runtime 없이 필요 없기 때문에 제거한다. 대신 _start 함수를 통해 operating system entry point를 overwrite한다.
+
+    #[no_mangle]
+    pub extern "C" fn _start() -> ! {
+        loop {}
+    }
+
+#[no_mangle] attribute를 사용하여 name mangling을 막고 이를 통해 러스트 컴파일러가 _start라는 이름 그대로 함수를 만들도록 보장한다. 이 attribute 없이, 컴파일러는 모든 함수에 유일한 이름을 부여하기 위해 이 함수의 실제 이름을 _ZN3blog_os4_start7hb173fedf945531caE라는 이름으로 바꿔 생성한다. 이 attribute는 링커에게 entry point 함수의 이름을 전달하기 위해 필요하다.
+
+함수를 extern "C"로 표시하여 컴파일러에게 (unspecified Rust calling convention 대신) C calling convention을 사용하도록 명시한다. 함수의 이름이 _start인 이유는 대부분의 시스템에서 기본 entry point 이름이 _start이기 때문이다.
+
+! 반환 타입은 함수가 diverge함을 의미한다. 이렇게 하는 이유는 entry point는 어떤 함수에 의해 실행되는 것이 아니라 operating system이나 bootloader에 의해 직접적으로 실행되기 때문이다. 따라서 반환하는 것 대신, entry point는 operating system의 exit system call을 실행해야 한다. 우리의 경우, 머신을 셧다운시키는 것이 적절한 동작이지만 현재는 무한히 반복하는 것으로 필요사항을 충족시킨다.
+
+cargo build를 실행하면 ungly linker error를 얻게 된다.
 
 ## Linker Errors
 
