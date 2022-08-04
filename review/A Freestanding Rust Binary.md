@@ -59,12 +59,11 @@ Cargo.toml은 crate name, the author, the semantic version number과 dependencie
 
     fn main() {}
 
+이번에는 컴파일러가 #[panic_handler] 함수와 language item을 찾지 못하고 있다.
 
     > cargo build
     error: `#[panic_handler]` function required, but not found
     error: language item required, but not found: `eh_personality`
-
-이번에는 컴파일러가 #[panic_handler] 함수와 language item을 찾지 못하고 있다.
 
 ## Panic Implementation
 
