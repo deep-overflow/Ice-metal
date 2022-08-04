@@ -41,7 +41,33 @@ Cargo.toml은 crate name, the author, the semantic version number과 dependencie
         println!("Hello, world!");
     }
 
+이것을 cargo build를 통해 빌드하면 다음과 같은 에러가 발생한다.
+
+    error: cannot find macro `println!` in this scope
+    --> src/main.rs:4:5
+    |
+    4 |     println!("Hello, world!");
+    |     ^^^^^^^
+
+이 에러의 원인은 println 매크로가 더 이상 포함되지 않는 표준 라이브러리의 일부이지 때문이다. 따라서 더 이상 무언가를 출력할 수 없다. println은 operating system으로부터 제공 받는 특별한 파일 작성자인 standard output을 통해 출력하기 때문에 당연한 소리이다.
+
+따라서 출력을 제거하고 빈 main 함수에 대해 다시 시도해보자.
+
+    // main.rs
+    
+    #![no_std]
+
+    fn main() {}
+
+
+    > cargo build
+    error: `#[panic_handler]` function required, but not found
+    error: language item required, but not found: `eh_personality`
+
+이번에는 컴파일러가 #[panic_handler] 함수와 language item을 찾지 못하고 있다.
+
 ## Panic Implementation
+
 
 ## The eh_personality Language Item
 
