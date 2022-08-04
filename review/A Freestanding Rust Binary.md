@@ -22,13 +22,10 @@ operating system kernel을 만들기 위해 어떤 operating system의 특성에
 
 --bin 플래그는 (라이브러리와 대조되는) 실행 가능한 바이너리를 만든다는 것을 명시하고 --edition 2018 플래그는 러스트의 2018 edition을 사용한다는 것을 명시한다. 위 명령어를 실행하면, cargo는 다음과 같은 디렉터리 구조를 생성한다.
 
-blog_os
-
-├── Cargo.toml
-
-└── src
-
-    └── main.rs
+    blog_os
+    ├── Cargo.toml
+    └── src
+        └── main.rs
 
 Cargo.toml은 crate name, the author, the semantic version number과 dependencies와 같은 crate configuration을 포함한다. src/main.rs 파일은 우리 크레이트의 루트 모듈과 main 함수를 포함한다. cargo build를 통해 크레이트를 컴파일할 수 있고 target/debug 하위 폴더 안에 있는 컴파일된 바이너리를 실행할 수 있다.
 
