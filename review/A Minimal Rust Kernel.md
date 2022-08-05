@@ -105,15 +105,119 @@ Cargo는 다른 target system들을 `--target` 인자를 통해 지원한다. ta
 "panic-strategy": "abort",
 ```
 
+이 설정은 target이 panic에서 stack unwinding을 지원하지 않는 것을 명시하고 따라서 프로그램은 바로 abort해야 한다. 이는 `Cargo.toml`에서 `panic = "abort"` 옵션과 같은 효과를 가져온다. 따라서 해당 옵션을 제거해도 된다. (Cargo.toml에서의 옵션과 대조적으로 이 target 옵션은 이후에 `core` 라이브러리를 재컴파일할 때에도 적용된다. 따라서 Cargo.toml 옵션을 유지하고 싶다라도 이 옵션을 추가해줘야 한다.)
 
+```json
+"disable-redzone": true,
+```
+
+커널을 작성하면서 어떤 부분에서 인터럽트를 처리해줘야 한다. 이를 안전하게 하기 위해, stack corruptions를 발생시킬 수 있기 때문에 "red zone"이라고 불리는 stack pointer optimization을 막아야 한다. ++
+
+```json
+"features": "-mmx,-sse,+soft-float",
+```
+
+`features` field는 target features를 가능하게 하거나 가능하지 않게 한다. `mmx`와 `sse`라는 features는 가능하지 않게 하고 `soft-float`라는 feature는 가능하게 한다. 다른 플래그 사이에 빈 공간이 있으면 LLVM이 features string을 해석하는 데 실패할 수 있다.
+
+`mmx`와 `sse`는 프로그램의 속도를 상당히 빠르게 해주는 Single Instruction Multiple Data(SIMD)에 대한 지원을 결정한다. 그러나 OS kernel에서 큰 SIMD register들은 성능 문제를 야기한다. 그 이유는 커널은 인터럽트된 프로그램을 지속하기 전에 모든 레지스터들을 원래대로 되돌려놔야 하기 때문이다. 이는 커널이 메인 메모리에 매 시스템 콜 또는 하드웨어 인터럽트마다 완전한 SIMD 상태를 저장해야 함을 의미한다. SIMD 상태는 매우 크고(512-1600bytes) 인터럽트는 매우 자주 발생하기 때문에 이러한 저장 및 회복 연산은 상당히 성능을 나쁘게 만든다. 이를 피하기 위해 SIMD를 막는다.
+
+SIMD가 막힘으로 인해 발생하는 문제는 `x86_64`에서 부동 소수점 연산을 위해 SIMD 레지스터가 기본적으로 필요하다는 것이다. 이를 해결하기 위해 일반적인 정수에 기반한 소프트웨어 함수들을 통해 부동 소수점 연산을 하는 `soft-float` 특성이 필요하다.
+
+#### Putting it Together
+
+우리의 target specification file은 아래와 같다:
+
+```json
+{
+    "llvm-target": "x86_64-unknown-none",
+    "data-layout": "e-m:e-i64:64-f80:128-n8:16:32:64-S128",
+    "arch": "x86_64",
+    "target-endian": "little",
+    "target-pointer-width": "64",
+    "target-c-int-width": "32",
+    "os": "none",
+    "executables": true,
+    "linker-flavor": "ld.lld",
+    "linker": "rust-lld",
+    "panic-strategy": "abort",
+    "disable-redzone": true,
+    "features": "-mmx,-sse,+soft-float"
+}
+```
 
 ### Building our Kernel
+
+새로운 target을 컴파일할 때 리눅스 convention을 사용할 것이다. 이는 `_start`라는 entry point가 필요하다는 것을 의미한다.
+
+```rust
+// src/main.rs
+
+#![no_std] // don't link the Rust standard library
+#![no_main] // disable all Rust-level entry points
+
+use core::panic::PanicInfo;
+
+/// This function is called on panic.
+#[panic_handler]
+fn panic(_info: &PanicInfo) -> ! {
+    loop {}
+}
+
+#[no_mangle] // don't mangle the name of this function
+pub extern "C" fn _start() -> ! {
+    // this function is the entry point, since the linker looks for a function
+    // named `_start` by default
+    loop {}
+}
+```
+
+호스트 운영체제에 상관 없이 entry point는 _start로 불려야 한다.
+
+json 파일의 이름을 `--target`으로 전달함으로써 새로운 target에 대하여 커널을 빌드할 수 있다.
+
+    > cargo build --target x86_64-blog_os.json
+
+    error[E0463]: can't find crate for `core`
+
+에러는 러스트 컴파일러가 `core` 라이브러리를 찾을 수 없다고 말하고 있다. 이 라이브러리는 Result, Option 그리고 iterators와 기본 러스트 타입을 포함하고 있고 모든 `no_std` 크레이트에 링크되어 있다.
+
+문제는 core 라이브러리는 사전에 컴파일된 라이브러리로 러스트 컴파일러와 함께 나눠졌다는 것이다. 따라서, 지원되는 호스트 triples에 대해서는 유효하지만 우리의 target에 대해서는 유효하지 않다. 만약 다른 target에 대하여 컴파일된 코드를 원한다면, 먼저 다른 target에 대해 `core`을 재컴파일해야 한다.
+
+#### The `build-std` Option
+
+이것이 cargo의 `build-std` feature이 등장하는 시점이다. 이를 통해 러스트 설치와 함께 설치된 사전에 컴파일된 버전을 사용하는 대신 `core`와 다른 표준 라이브러리 크레이트들을 필요에 따라 재컴파일할 수 있다. 이 특성은 불안정하여 nightly Rust compiler에서만 사용 가능하다.
+
+이 특성을 하용하기 위해 `.cargo/config.toml`에 다음과 같은 내용을 담은 cargo configuration 파일을 만들어야 한다.
+
+    # in .cargo/config.toml
+
+    [unstable]
+    build-std = ["core", "compiler_builtins"]
+
+이것은 cargo가 `core`와 `compiler_builtins` 라이브러리들을 재컴파일해야 함을 알려준다. 후자는 `core`의 dependency이기 때문에 필요하다. 이러한 라이브러리들을 재컴파일하기 위해, cargo는 우리가 `rustup component add rust-src`를 통해 설치할 수 있는 러스트 소스 코드에 접근해야 한다.
+
+unstable.build-std configuration을 설정하고 rust-src component를 설치한 이후, 빌드를 다시 실행하면 된다.
+
+    > cargo build --target x86_64-blog_os.json
+    Compiling core v0.0.0 (/…/rust/src/libcore)
+    Compiling rustc-std-workspace-core v1.99.0 (/…/rust/src/tools/rustc-std-workspace-core)
+    Compiling compiler_builtins v0.1.32
+    Compiling blog_os v0.1.0 (/…/blog_os)
+        Finished dev [unoptimized + debuginfo] target(s) in 0.29 secs
+
+++
+
+#### Memory-Related Intrinsics
+
+#### Set a Default Target
 
 ### Printing to Screen
 
 ## Running out Kernel
 
 ### Creating a Bootimage
+
+#### How does it work?
 
 ### Booting it in QEMU
 
