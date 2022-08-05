@@ -1,14 +1,12 @@
 [package]
-name = "ice-metal"
+name = "crate_name"
 version = "0.1.0"
-edition = "2018"
+authors = ["deep-overflow 2020320120@korea.ac.kr"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-
+# the profile used for `cargo build`
 [profile.dev]
-panic = "abort"
+panic = "abort" # disable stack unwinding on panic
 
+# the profile used for `cargo build --release`
 [profile.release]
-panic = "abort"
+panic = "abort" # disable stack unwinding on panic

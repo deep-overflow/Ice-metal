@@ -164,6 +164,73 @@ linker는 생성된 코드를 실행파일로 결합하는 프로그램이다. �
 
 기본적으로 러스트는 빌드한 실행파일이 현재 시스템 환경에서 동작할 수 있게 한다. 예를 들어, x86_64의 윈도우를 사용한다면, 러스트는 x86_64의 명령을 따르는 .exe 윈도우 실행파일을 만들 것이다.
 
+다른 환경을 표현하기 위해 러스트는 target triple이라고 불리는 문자열을 사용한다. rustc --version --verbose를 실행하면 host system의 target triple을 볼 수 있다.
+
+    rustc 1.35.0-nightly (474e7a648 2019-04-07)
+    binary: rustc
+    commit-hash: 474e7a6486758ea6fc761893b1a49cd9076fb0ab
+    commit-date: 2019-04-07
+    host: x86_64-unknown-linux-gnu
+    release: 1.35.0-nightly
+    LLVM version: 8.0
+
+위 출력은 x86_64 리눅스 시스템의 것이다. 호스트의 triple이 x86_64-unknown-linux-gnu라는 것을 볼 수 있다. 이는 CPU architecture는 x86_64, vendor는 unknown, operating system은 linux 그리고 ABI는 gnu라는 것을 말한다.
+
+host triple에 대해 컴파일하면 러스트 컴파일러와 linker는 C runtime을 기본적으로 사용하는 리눅스와 윈도우와 같은 operating system이 존재한다고 가정하고 때문에 linker error가 발생한다. 따라서 linker error를 피하기 위해, underlying operating system이 없는 다른 환경에 대해 컴파일할 수 있다.
+
+bare metal 환경을 위한 예시는 embedded ARM system을 나타내는 thumbv7em-none-eabihf target triple이다. 구체적인 것은 중요하지 않고, 중요한 것은 저 target triple은 target triple에서 none이 표시하고 있는 underlying operating system이 없다는 것이다. 이것을 컴파일하기 위해서는 rustup에 포함해야 한다.
+
+    rustup target add thumbv7em-none-eabihf
+
+해당 시스템의 표준(그리고 핵심) 라이브러리의 사본을 다운받게 된다. 이제 freestanding 실행파일을 빌드할 수 있다.
+
+    cargo build --target thumbv7em-none-eabihf
+
+--target 인자를 전달하여 bare metal target system을 위한 실행파일을 cross compile할 수 있다. target system이 operating system이 없기 때문에, linker는 C runtime과 링크하지 않아도 되고 어떤 linker error 없이 빌드를 성공할 수 있다.
+
+이것이 OS kernel을 빌드하기 위해 사용할 접근방식이다. thumbv7em-none-eabihf 대신, x86_64 bare metal environment를 나타내는 custom target을 사용할 것이다.
+
 ### Linker Arguments
 
+bare metal system을 위해 컴파일하는 방식 대신, linker에 인자 집합을 전달하여 linker error들을 해결할 수 있다. 이것은 우리의 kernel을 위해 사용할 접근방식은 아니다.
+
 ## Summary
+
+최소한의 freestanding Rust binary는 다음과 같다:
+
+`src/main.rs`
+```rust
+#![no_std] // don't link the Rust standard library
+#![no_main] // disable all Rust-level entry points
+
+use core::panic::PanicInfo;
+
+#[no_mangle] // don't mangle the name of this function
+pub extern "C" fn _start() -> ! {
+    // this function is the entry point, since the linker looks for a function
+    // named `_start` by default
+    loop {}
+}
+
+/// This function is called on panic.
+#[panic_handler]
+fn panic(_info: &PanicInfo) -> ! {
+    loop {}
+}
+```
+
+`Cargo.toml`
+```rust
+[package]
+name = "crate_name"
+version = "0.1.0"
+authors = ["Author Name <author@example.com>"]
+
+# the profile used for `cargo build`
+[profile.dev]
+panic = "abort" # disable stack unwinding on panic
+
+# the profile used for `cargo build --release`
+[profile.release]
+panic = "abort" # disable stack unwinding on panic
+```
