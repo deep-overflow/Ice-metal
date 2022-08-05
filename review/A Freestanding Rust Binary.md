@@ -33,13 +33,15 @@ Cargo.toml은 crate name, the author, the semantic version number과 dependencie
 
 현재 우리 크레이트는 은연 중에 표준 라이브러리를 링크하고 있다. no_std attribute를 추가하여 이를 막을 수 있다.
 
-    // main.rs
+```rust
+// main.rs
 
-    #![no_std]
+#![no_std]
 
-    fn main() {
-        println!("Hello, world!");
-    }
+fn main() {
+    println!("Hello, world!");
+}
+```
 
 이것을 cargo build를 통해 빌드하면 다음과 같은 에러가 발생한다.
 
@@ -53,11 +55,13 @@ Cargo.toml은 crate name, the author, the semantic version number과 dependencie
 
 따라서 출력을 제거하고 빈 main 함수에 대해 다시 시도해보자.
 
-    // main.rs
-    
-    #![no_std]
+```rust
+// main.rs
 
-    fn main() {}
+#![no_std]
+
+fn main() {}
+```
 
 이번에는 컴파일러가 #[panic_handler] 함수와 language item을 찾지 못하고 있다.
 
@@ -69,15 +73,17 @@ Cargo.toml은 crate name, the author, the semantic version number과 dependencie
 
 panic_handler attribute는 panic이 발생했을 때 컴파일러가 불러야 하는 함수를 정의한다. 표준 라이브러리는 자신만의 panic handler 함수를 제공하지만, no_std 환경에서 이를 정의할 필요가 있다.
 
-    // in main.rs
+```rust
+// in main.rs
 
-    use core::panic::PanicInfo;
+use core::panic::PanicInfo;
 
-    /// This function is called on panic.
-    #[panic_handler]
-    fn panic(_info: &PanicInfo) -> ! {
-        loop {}
-    }
+// This function is called on panic.
+#[panic_handler]
+fn panic(_info: &PanicInfo) -> ! {
+    loop {}
+}
+```
 
 PanicInfo 파라미터는 panic이 발생한 파일과 줄 그리고 선택적인 panic 메시지를 포함한다. 함수는 절대 반환하지 않으므로 "never" 타입인 !를 반환하는 diverging 함수이다. 현재 우리가 이 함수 안에서 할 수 있는 것이 많지 않으므로 그냥 무한루프를 생성하도록 한다.
 
@@ -130,17 +136,6 @@ fn panic(_info: &PanicInfo) -> ! {
     loop {}
 }
 ```
-
-    #![no_std]
-    #![no_main]
-
-    use core::panic::PanicInfo;
-
-    /// This function is called on panic.
-    #[panic_handler]
-    fn panic(_info: &PanicInfo) -> ! {
-        loop {}
-    }
 
 main 함수는 underlying runtime 없이 필요 없기 때문에 제거한다. 대신 _start 함수를 통해 operating system entry point를 overwrite한다.
 
