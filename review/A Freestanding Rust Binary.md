@@ -118,6 +118,19 @@ freestanding 실행파일은 Rust runtime과 crt0에 대해 접근하지 않는�
 
 Rust 컴파일러에게 표준 entry point chain을 사용하지 않을 것을 명시하기 위해 #![no_main] attribute를 추가한다.
 
+```rust
+#![no_std]
+#![no_main]
+
+use core::panic::PanicInfo;
+
+/// This function is called on panic.
+#[panic_handler]
+fn panic(_info: &PanicInfo) -> ! {
+    loop {}
+}
+```
+
     #![no_std]
     #![no_main]
 
@@ -146,7 +159,13 @@ cargo build를 실행하면 ungly linker error를 얻게 된다.
 
 ## Linker Errors
 
+linker는 생성된 코드를 실행파일로 결합하는 프로그램이다. 시스템마다 실행파일의 형식이 다르기 때문에 각각의 시스템은 다른 에러를 던지는 각 시스템만의 linker를 가진다. 이 에러의 본질적인 원인은 같다: linker의 기본 configuration이 우리의 프로그램이 C runtime에 의존한다고 가정하는 것이다. (실제로 그렇지 않다.)
+
+이 에러를 해결하기 위해, linker가 C runtime을 포함하지 않도록 알려줘야 한다. 이는 특정 인자들의 집합을 linker에 전달하거나 bare metal target을 위해 빌드하는 방식으로 할 수 있다.
+
 ### Building for a Bare Metal Target
+
+기본적으로 러스트는 빌드한 실행파일이 현재 시스템 환경에서 동작할 수 있게 한다. 예를 들어, x86_64의 윈도우를 사용한다면, 러스트는 x86_64의 명령을 따르는 .exe 윈도우 실행파일을 만들 것이다.
 
 ### Linker Arguments
 
