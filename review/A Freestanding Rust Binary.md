@@ -224,7 +224,7 @@ fn panic(_info: &PanicInfo) -> ! {
 [package]
 name = "crate_name"
 version = "0.1.0"
-authors = ["Author Name <author@example.com>"]
+authors = ["deep-overflow 2020320120@korea.ac.kr"]
 
 # the profile used for `cargo build`
 [profile.dev]
@@ -234,3 +234,18 @@ panic = "abort" # disable stack unwinding on panic
 [profile.release]
 panic = "abort" # disable stack unwinding on panic
 ```
+
+이 바이너리를 빌드하기 위해서는 `thumbv7em-none-eabihf`와 같은 bare metal target에 대해 컴파일해야 한다.
+
+    cargo build --target thumbv7em-none-eabihf
+
+대신, 추가적인 linker argument들을 전달하여 host system에 대하여 컴파일할 수 있다.
+
+    # Linux
+    cargo rustc -- -C link-arg=-nostartfiles
+    # Windows
+    cargo rustc -- -C link-args="/ENTRY:_start /SUBSYSTEM:console"
+    # macOS
+    cargo rustc -- -C link-args="-e __start -static -nostartfiles"
+
+이것은 freestanding Rust binary의 가장 단순한 예시이다. 이 바이너리는 다양한 기능을 기대한다. 예를 들면, `_start`함수가 실행되면 stack이 초기화된다. 
