@@ -99,11 +99,13 @@ eh_personality language item은 stack unwinding을 구현하는 데에 사용된
 
 unwinding이 바람직하지 않은 다른 경우들도 있다. 따라서 러스트는 panic을 abort하는 옵션을 제공한다. 이는 unwinding symbol 정보가 생성되는 것을 막고 따라서 바이너리 사이즈를 상당히 줄여준다. unwinding을 막는 가장 쉬운 방법은 Cargo.toml에 다음 코드를 넣는 것이다.
 
-    [profile.dev]
-    panic = "abort"
+```toml
+[profile.dev]
+panic = "abort"
 
-    [profile.release]
-    panic = "abort"
+[profile.release]
+panic = "abort"
+```
 
 이는 cargo build를 사용하는 dev 프로필과 cargo build --release를 사용하는 release 프로필에서 panic strategy를 abort로 설정하는 것이다. 이제 eh_personality language item으 더 이상 필요하지 않다.
 
