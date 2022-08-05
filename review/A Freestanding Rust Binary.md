@@ -139,10 +139,12 @@ fn panic(_info: &PanicInfo) -> ! {
 
 main 함수는 underlying runtime 없이 필요 없기 때문에 제거한다. 대신 _start 함수를 통해 operating system entry point를 overwrite한다.
 
-    #[no_mangle]
-    pub extern "C" fn _start() -> ! {
-        loop {}
-    }
+```rust
+#[no_mangle]
+pub extern "C" fn _start() -> ! {
+    loop {}
+}
+```
 
 #[no_mangle] attribute를 사용하여 name mangling을 막고 이를 통해 러스트 컴파일러가 _start라는 이름 그대로 함수를 만들도록 보장한다. 이 attribute 없이, 컴파일러는 모든 함수에 유일한 이름을 부여하기 위해 이 함수의 실제 이름을 _ZN3blog_os4_start7hb173fedf945531caE라는 이름으로 바꿔 생성한다. 이 attribute는 링커에게 entry point 함수의 이름을 전달하기 위해 필요하다.
 
