@@ -209,13 +209,109 @@ unstable.build-std configuration을 설정하고 rust-src component를 설치한
 
 #### Memory-Related Intrinsics
 
+러스트 컴파일러는 built-in 함수들의 특정 집합은 모든 시스템에서 사용 가능하다고 가정한다. 이런 함수들 중 대부분은 우리가 재컴파일한 `compiler_builtins` 크레이트가 제공한다. 그러나, 이 크레이트에는 기본적으로 사용할 수 없는 메모리와 관련된 함수들이 있는데, 이는 시스템 상에 있는 C 라이브러리에 의해 제공되기 때문이다. 이러한 함수들에는 메모리 블록에 있는 모든 바이트를 주어진 값으로 설정하는 `memset`, 하나의 메모리 블록을 다른 메모리 블록으로 복사하는 `memcpy`, 두 개의 메모리 블록을 비교하는 `memcmp` 등이 포함된다. 지금 당장은 커널을 컴파일하기 위해 이러한 함수들이 필요하진 않지만 코드를 더 추가하면 필요할 것이다.
+
+operating system의 C 라이브러리를 링크할 수 없기 때문에, 이러한 함수들을 컴파일러에 제공하기 위한 대안이 필요하다. 가능한 방식 중 하나는 우리만의 `memset` 등의 함수를 구현하고 `#[no_mangle]` attribute를 적용하는 것이다. 하지만 이러한 함수들의 구현에 작은 실수는 예상치 못한 동작으로 이어질 수 있기 때문에 위험하다. ++ 따라서 기존의 검증된 구현을 재사용하는 것이 좋다.
+
+다행히, `compiler_builtins` 크레이트는 모든 필요한 함수에 대한 구현을 포함하고 있고, C 라이브러리의 구현과 충돌하지 않도록 기본적으로 사용할 수 없게 설정되어 있다. cargo의 `build-std-features` 플래그를 `["compiler-builtins-mem"]`로 설정하여 사용할 수 있다. `build-std` 플래그와 유사하게, 이 플래그는 커맨드 라인에서 `-Z` 플래그처럼 전달하거나 `.cargo/config.toml` 내에서 `unstable` 테이블에서 설정할 수 있다. 
+
+```toml
+# in .cargo/config.toml
+
+[unstable]
+build-std-features = ["compiler-builtins-mem"]
+build-std = ["core", "compiler_builtins"]
+```
+
+이 플래그는 `compiler_builtins` 크레이트의 `mem` 특성을 사용할 수 있게 한다. 효과는 `memcpy` 등의 함수에 `#[no_mangle]` attribute가 적용되어 링커가 사용 가능하도록 만드는 것이다.
+
+이 변화로 컴파일러가 필요한 함수에 대해 유효한 구현을 가지고 따라서 더 복잡한 코드도 컴파일 가능하다.
+
 #### Set a Default Target
+
+매 `cargo build`마다 `--target` 인자를 전달하는 것을 피하기 위해 기본 target을 override할 수 있다. 이를 위해 다음을 `.cargo/config.toml`에 추가해야 한다.
+
+```toml
+# in .cargo/config.toml
+
+[build]
+target = "x86_64-blog_os.json"
+```
+
+이는 cargo가 `x86_64-blog_os.json` target을 사용하도록 명시한다. 이제 `cargo build`만으로 커널을 빌드할 수 있다.
+
+아직 `_start` entry point는 비어 있다. 이제 뭔가 화면에 출력하도록 해보자.
 
 ### Printing to Screen
 
+이 단계에서 텍스트를 화면에 출력하는 가장 쉬운 방법은 VGA text buffer이다. 이것은 화면에 나타나는 내용을 포함하는 VGA 하드웨어에 대응하는 특별한 메모리 공간이다. 일반적으로 80개의 문자 셀을 포함하는 25개의 줄로 구성되어 있다. 각 문자 셀은 foreground 색과 background 색과 함께 ASCII 문자를 표시한다.
+
+VGA buffer의 정확한 레이아웃은 다음 포스트에서 논의한다. "Hello, World!"를 출력하기 위해, buffer는 `0xb8000`에 위치한다는 것과 각 문자 셀은 ASCII byte와 color byte로 구성되어 있다는 것을 알아야 한다.
+
+구현은 다음과 같다:
+
+```rust
+static HELLO: &[u8] = b"Hello World!";
+
+#[no_mangle]
+pub extern "C" fn _start() -> ! {
+    let vga_buffer = 0xb8000 as *mut u8;
+
+    for (i, &byte) in HELLO.iter().enumerate() {
+        unsafe {
+            *vga_buffer.offset(i as isize * 2) = byte;
+            *vga_buffer.offset(i as isize * 2 + 1) = 0xb;
+        }
+    }
+
+    loop {}
+}
+```
+
+먼저, 정수 `0xb8000`을 raw pointer로 캐스트한다. 이후 static `HELLO` byte string의 byte들을 iterate한다. for loop에서 `offset` 메서드를 사용하여 string byte와 color byte를 출력한다.
+
+모든 메모리 작성 주위에는 `unsafe` 블록이 있다. 이는 러스트 컴파일러가 우리가 생성한 raw pointer가 유효한지 증명할 수 없기 때문이다. raw pointer는 어느 곳이든 가리킬 수 있고 data corruption으로 이어질 수 있다. `unsafe` 블록 안에 두어서 컴파일러에게 해당 연산이 유효함을 보장할 수 있다. `unsafe` 블록이 러스트의 safety check를 끄는 것은 아니다. 
+
+++
+
+따라서 우리는 가능한 `unsafe`의 사용을 줄이고 싶다. 러스트는 safe abstraction을 생성하여 이를 할 수 있게 한다. 예를 들어 모든 unsafety를 encapsulate하고 외부로부터 모든 잘못된 동작이 불가능하도록 보장할 수 있는 VGA buffer type을 생성할 수 있다. 이 방식은 최소한의 `unsafe`가 필요하고 memory safety를 어기지 않는 것을 보장할 수 있다. 다음 포스트에서 VGA buffer abstraction을 생성할 것이다.
+
 ## Running out Kernel
 
+이제 상당한 뭔가를 실행할 수 있는 실행파일을 실행해보자. 먼저 컴파일된 커널을 부트로더와 링크하여 부팅 가능한 디스크 이미지로 바꿔야 한다. 이후에 QEMU 가상 머신에서 디스크 이미지를 실행하거나 USB를 사용하여 실제 하드웨어에서 부트할 수 있다.
+
 ### Creating a Bootimage
+
+컴파일된 커널을 부팅 가능한 디스크 이미지로 바꾸기 위해서는 컴파일된 커널을 부트로더와 링크해야 한다. 부트로더는 CPU를 초기화하고 커널을 로드하는 역할을 한다.
+
+우리만의 부트로더를 만드는 대신 `bootloader` 크레이트를 사용한다. 이 크레이트는 C dependencies가 없는 기본적인 BIOS 부트로더를 구현하고 있다. 커널을 부팅하기 위해 이것을 사용하려면 dependency를 추가해야 한다.
+
+```toml
+# in Cargo.toml
+
+[dependencies]
+bootloader = "0.9.8"
+```
+
+bootloader를 dependency로 추가하는 것은 실제로 부팅 가능한 디스크 이미지를 만드는 데에 충분하지 않다. 문제는 커널과 부트로더를 컴파일 이후에 링크해야 하지만 cargo는 post-build script를 지원하지 않는다.
+
+이를 해결하기 위해, 커널과 부트로더를 먼저 컴파일하고 이후에 부팅 가능한 디스크 이미지를 생성하기 위해 이들을 링크하는 `bootimage`라는 도구를 만들었다. 이 도구를 설치하기 위해 다음 명령을 터미널에 실행하면 된다.
+
+```
+cargo install bootimage
+```
+
+`bootimage`를 실행하고 부트로더를 빌드하기 위해 `llvm-tools-preview` rustup component를 가져야 한다. `rustup component add llvm-tools-preview`를 실행하면 된다.
+
+`bootimage`를 설치하고 `llvm-tools-preview` component를 추가한 이후에 다음을 실행하여 부팅 가능한 디스크 이미지를 생성할 수 있다.
+
+```
+cargo bootimage
+```
+
+해당 도구가 `cargo build`를 사용하여 커널을 재컴파일한다. 이후에 부트로더를 컴파일한다. 다른 크레이트 dependencies처럼 한 번 빌드된 후에 캐시된다. 따라서 이어지는 빌드는 더 빠르게 진행된다. 최종적으로 `bootimage`는 부트로더와 커널을 부팅 가능한 디스크 이미지로 결합한다.
+
+위 명령어를 실행한 후, `target/x86_64-blog_os/debug` 디렉터리 내에서 `bootimage-blog_os.bin`이라는 부팅 가능한 디스크 이미지를 볼 수 있다. 이 이미지를 가상 머신에서 부팅하거나 실제 하드웨어 상에서 USB를 통해 부팅할 수 있다.
 
 #### How does it work?
 
