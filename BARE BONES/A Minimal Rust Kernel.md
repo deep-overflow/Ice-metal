@@ -315,8 +315,35 @@ cargo bootimage
 
 #### How does it work?
 
+`bootimage`는 다음 단계를 거쳐 실행된다.
+
+- 커널을 ELF 파일로 컴파일한다.
+- 부트로더 dependency를 standalone executable로 컴파일한다.
+- 커널 ELF 파일을 부트로더에 링크한다.
+
+부팅이 시작되면, 부트로더는 ELF 파일을 읽고 분할한다. 그리고 페이지 테이블에서 프로그램 조각들을 가상 주소에 연결하고, `.bss` 부분을 0으로 초기화하고, 스택을 초기화한다. 최종적으로 entry point 주소를 읽은 후에 그곳으로 이동한다.
+
 ### Booting it in QEMU
+
+이제 디스크 이미지를 가상 머신에서 부팅할 수 있다. QEMU에서 부팅하기 위해, 다음 명령어를 실행하면 된다.
+
+```
+> qemu-system-x86_64 -drive format=raw,file=target/x86_64-blog_os/debug/bootimage-blog_os.bin
+warning: TCG doesn't support requested feature: CPUID.01H:ECX.vmx [bit 5]
+```
 
 ### Real Machine
 
+USB에 저장하고 실제 머신 상에서 부팅할 수 있다.
+
+```
+> dd if=target/x86_64-blog_os/debug/bootimage-blog_os.bin of=/dev/sdX && sync
+```
+
+`sdX`는 USB의 디바이스 이름이다.
+
+++
+
 ### Using cargo run
+
+++
