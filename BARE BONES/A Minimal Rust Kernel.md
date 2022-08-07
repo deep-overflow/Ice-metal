@@ -328,7 +328,7 @@ cargo bootimage
 이제 디스크 이미지를 가상 머신에서 부팅할 수 있다. QEMU에서 부팅하기 위해, 다음 명령어를 실행하면 된다.
 
 ```
-> qemu-system-x86_64 -drive format=raw,file=target/x86_64-blog_os/debug/bootimage-blog_os.bin
+> qemu-system-x86_64 -drive format=raw,file=target/ice-metal/debug/bootimage-ice-metal.bin
 warning: TCG doesn't support requested feature: CPUID.01H:ECX.vmx [bit 5]
 ```
 

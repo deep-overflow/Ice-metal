@@ -222,7 +222,7 @@ fn panic(_info: &PanicInfo) -> ! {
 ```
 
 `Cargo.toml`
-```rust
+```toml
 [package]
 name = "crate_name"
 version = "0.1.0"
